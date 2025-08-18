@@ -9,7 +9,10 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ant-design/icons": "^6.0.0",
     "antd": "^5.27.0",
+    "axios": "^1.11.0",
+    "dayjs": "^1.11.13",
     "next": "15.4.6",
     "react": "19.1.0",
     "react-dom": "19.1.0"

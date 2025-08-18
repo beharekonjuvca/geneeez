@@ -1,0 +1,36 @@
+html,
+body,
+#__next {
+  height: 100%;
+}
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+:root {
+  --pad: 24px;
+}
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--pad);
+}
+.logo {
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+.logo .dot {
+  color: #0f0f10;
+}
+.logo .eStripe {
+  background: linear-gradient(90deg, #ea5161, #6cc1e0, #61d89c);
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.card {
+  background: #fff;
+  border: 1px solid #e9edf2;
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+}

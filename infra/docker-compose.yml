@@ -1,0 +1,16 @@
+version: "3.9"
+services:
+  postgres:
+    image: postgres:16
+    container_name: geneeez-postgres-db
+    environment:
+      POSTGRES_DB: geneeez
+      POSTGRES_USER: geneeez
+      POSTGRES_PASSWORD: geneeez_pw
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata: {}
