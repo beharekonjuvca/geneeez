@@ -2,8 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_db
-from app.routers import auth
-from app.routers import auth, datasets
+from app.routers import auth, datasets, analysis
 
 app = FastAPI(title="geneeez-api")
 
@@ -19,6 +18,8 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 app.include_router(datasets.router, prefix="/datasets", tags=["datasets"])
+
+app.include_router(analysis.router, tags=["analysis"]) 
 
 @app.get("/health")
 def health():
