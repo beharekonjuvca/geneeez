@@ -1,5 +1,12 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { api, setAccess } from "../lib/api";
+import {
+  apiLogin,
+  apiLogout,
+  apiSignup,
+  apiRefresh,
+  apiMe,
+} from "../lib/api/auth";
+import { setAccess } from "../lib/api/client";
 
 const AuthCtx = createContext(null);
 export const useAuth = () => useContext(AuthCtx);
@@ -12,16 +19,14 @@ export default function AuthProvider({ children }) {
     let mounted = true;
     (async () => {
       try {
-        const r = await api.post("/auth/refresh");
-        if (!mounted) return;
-        setAccess(r.data.access);
-        const me = await api.get("/auth/me");
-        if (!mounted) return;
-        setUser(me.data);
+        await apiRefresh();
+        const me = await apiMe();
+        if (mounted) setUser(me);
       } catch {
-        if (!mounted) return;
-        setUser(null);
-        setAccess(null);
+        if (mounted) {
+          setUser(null);
+          setAccess(null);
+        }
       } finally {
         if (mounted) setInitializing(false);
       }
@@ -32,25 +37,23 @@ export default function AuthProvider({ children }) {
   }, []);
 
   const signup = async (email, password) => {
-    const r = await api.post("/auth/signup", { email, password });
-    setAccess(r.data.access);
-    setUser(r.data.user);
-    return r.data.user;
+    const { user } = await apiSignup(email, password);
+    setUser(user);
+    return user;
   };
 
   const login = async (email, password) => {
-    const r = await api.post("/auth/login", { email, password });
-    setAccess(r.data.access);
-    setUser(r.data.user);
-    return r.data.user;
+    const { user } = await apiLogin(email, password);
+    setUser(user);
+    return user;
   };
 
   const logout = async () => {
     try {
-      await api.post("/auth/logout");
+      await apiLogout();
     } finally {
-      setAccess(null);
       setUser(null);
+      setAccess(null);
     }
   };
 

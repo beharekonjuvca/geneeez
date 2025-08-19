@@ -1,4 +1,6 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, Field
+from datetime import datetime
+from typing import Optional
 import re
 
 class AuthIn(BaseModel):
@@ -22,3 +24,19 @@ class SignupIn(AuthIn):
         if not re.search(r"[^\w\s]", v):
             raise ValueError("Add at least one special character.")
         return v
+class DatasetCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: Optional[str] = None
+
+class DatasetOut(BaseModel):
+    id: int
+    title: str
+    description: Optional[str]
+    original_filename: str
+    file_size_bytes: Optional[int]
+    n_rows: Optional[int]
+    n_cols: Optional[int]
+    is_public: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
