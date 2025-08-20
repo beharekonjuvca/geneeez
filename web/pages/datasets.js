@@ -85,6 +85,10 @@ export default function Datasets() {
     }
   }
 
+  function openDetail(id) {
+    router.push(`/datasets/${id}`);
+  }
+
   if (initializing || !user) {
     return (
       <AppShell>
@@ -148,13 +152,24 @@ export default function Datasets() {
             dataSource={filtered}
             rowKey="id"
             pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            onRow={(record) => ({
+              onClick: () => openDetail(record.id),
+              style: { cursor: "pointer" },
+            })}
             columns={[
               {
                 title: "Title",
                 dataIndex: "title",
                 render: (v, rec) => (
                   <div style={{ display: "flex", flexDirection: "column" }}>
-                    <Text strong>{v}</Text>
+                    <a
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDetail(rec.id);
+                      }}
+                    >
+                      <Text strong>{v}</Text>
+                    </a>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       {rec.original_filename}
                     </Text>
@@ -191,9 +206,14 @@ export default function Datasets() {
                   <Popconfirm
                     title="Delete dataset?"
                     okType="danger"
-                    onConfirm={() => remove(r.id)}
+                    onConfirm={(e) => remove(r.id)}
                   >
-                    <Button icon={<DeleteOutlined />} danger ghost />
+                    <Button
+                      icon={<DeleteOutlined />}
+                      danger
+                      ghost
+                      onClick={(e) => e.stopPropagation()}
+                    />
                   </Popconfirm>
                 ),
               },

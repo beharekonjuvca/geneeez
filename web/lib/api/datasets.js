@@ -21,3 +21,14 @@ export async function deleteDataset(id) {
   const { data } = await api.delete(`/datasets/${id}`);
   return data;
 }
+export async function getDatasetPreview(id, rows = 50) {
+  const { data } = await api.get(`/datasets/${id}/preview`, {
+    params: { rows },
+  });
+  return data;
+}
+
+export async function getDatasetSchema(id) {
+  const { data } = await api.get(`/datasets/${id}/schema`);
+  return data;
+}
