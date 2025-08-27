@@ -12,8 +12,6 @@ body,
   --pad: 24px;
 }
 .container {
-  max-width: 1080px;
-  margin: 0 auto;
   padding: var(--pad);
 }
 .logo {

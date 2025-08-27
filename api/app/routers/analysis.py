@@ -5,7 +5,12 @@ from datetime import datetime
 import os
 import hashlib
 import pandas as pd
-
+from typing import Optional
+from fastapi import Response
+from fastapi.responses import StreamingResponse
+import io
+import pandas as pd
+from app.utils.dataread import read_table_any
 from app.db import get_db
 from app.models import Dataset, User
 from app.utils.deps import current_user
@@ -106,3 +111,56 @@ def dataset_schema(
     payload = {"rows": n, "columns": out}
     mongo.caches.update_one(key, {"$set": {"payload": payload, "created_at": datetime.utcnow()}}, upsert=True)
     return payload
+@router.get("/datasets/{dataset_id}/download")
+def download_dataset(
+    dataset_id: int,
+    format: str = "csv",                
+    columns: Optional[str] = None,       
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    ds = db.query(Dataset).filter(Dataset.id == dataset_id, Dataset.owner_id == user.id).first()
+    if not ds:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+
+    try:
+        df = read_table_any(ds.storage_path)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read file: {e}")
+
+    if columns:
+        cols = [c for c in columns.split(",") if c in df.columns]
+        if not cols:
+            raise HTTPException(status_code=400, detail="No requested columns found")
+        df = df[cols]
+
+    title = (ds.title or f"dataset_{dataset_id}").replace(" ", "_")
+
+    if format == "csv":
+        buf = io.StringIO()
+        df.to_csv(buf, index=False)
+        data = buf.getvalue().encode("utf-8")
+        return StreamingResponse(
+            io.BytesIO(data),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{title}.csv"'},
+        )
+    elif format == "xlsx":
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="data")
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{title}.xlsx"'},
+        )
+    elif format == "json":
+        data = df.to_json(orient="records")
+        return StreamingResponse(
+            io.BytesIO(data.encode("utf-8")),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{title}.json"'},
+        )
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported format")

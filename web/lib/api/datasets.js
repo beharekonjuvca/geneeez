@@ -32,3 +32,16 @@ export async function getDatasetSchema(id) {
   const { data } = await api.get(`/datasets/${id}/schema`);
   return data;
 }
+
+export async function downloadDataset(
+  id,
+  { format = "csv", columns = [] } = {}
+) {
+  const params = { format };
+  if (columns.length) params.columns = columns.join(",");
+  const resp = await api.get(`/datasets/${id}/download`, {
+    params,
+    responseType: "blob",
+  });
+  return resp.data;
+}
