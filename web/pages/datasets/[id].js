@@ -27,6 +27,10 @@ import {
   downloadDataset,
 } from "../../lib/api/datasets";
 import ColumnDrawer from "../../components/ColumnDrawer";
+import ChartPanel from "../../components/ChartPanel";
+import { saveRecipe, listRecipes, updateRecipe } from "../../lib/api/recipes";
+import CorrelationPanel from "../../components/CorrelationPanel";
+import PcaPanel from "../../components/PcaPanel";
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -61,6 +65,9 @@ export default function DatasetDetail() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeCol, setActiveCol] = useState(null);
 
+  const [panels, setPanels] = useState([]);
+  const [recipeId, setRecipeId] = useState(null);
+
   useEffect(() => {
     if (!initializing && !user) router.replace("/");
   }, [initializing, user, router]);
@@ -83,6 +90,51 @@ export default function DatasetDetail() {
       }
     })();
   }, [initializing, user, id]);
+  useEffect(() => {
+    if (!id || !user) return;
+    (async () => {
+      try {
+        const recs = await listRecipes(Number(id));
+        if (recs.length) {
+          setPanels(recs[0].panels || []);
+          setRecipeId(recs[0].id);
+        } else {
+          setPanels([]);
+          setRecipeId(null);
+        }
+      } catch {}
+    })();
+  }, [id, user]);
+
+  function addPanel(kind = "hist") {
+    const def = { id: String(Date.now()), kind, bins: 20, filters: [] };
+    setPanels((p) => [def, ...p]);
+  }
+
+  async function savePanels() {
+    try {
+      if (recipeId) {
+        await updateRecipe(recipeId, { panels });
+      } else {
+        const res = await saveRecipe(Number(id), "Visual layout", panels);
+        setRecipeId(res.id);
+      }
+      message.success("Saved");
+    } catch {
+      message.error("Save failed");
+    }
+  }
+
+  function updateOne(updated) {
+    setPanels((p) => p.map((x) => (x.id === updated.id ? updated : x)));
+  }
+  function deleteOne(idToDel) {
+    setPanels((p) => p.filter((x) => x.id !== idToDel));
+  }
+  function duplicateOne(panel) {
+    const copy = { ...panel, id: String(Date.now()) };
+    setPanels((p) => [copy, ...p]);
+  }
 
   if (initializing || !user || loading) {
     return (
@@ -319,14 +371,47 @@ export default function DatasetDetail() {
           )}
 
           {active === "visualize" && (
-            <Card className="card">
-              <Title level={5} style={{ marginTop: 0 }}>
-                Visualize (coming soon)
-              </Title>
-              <Text type="secondary">
-                We’ll add quick histograms, bar charts, and scatter plots here.
-              </Text>
-            </Card>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Space>
+                  <Button onClick={() => addPanel("hist")}>+ Histogram</Button>
+                  <Button onClick={() => addPanel("bar")}>+ Bar</Button>
+                  <Button onClick={() => addPanel("line")}>+ Line</Button>
+                  <Button onClick={() => addPanel("scatter")}>+ Scatter</Button>
+                </Space>
+                <Space>
+                  <Button type="primary" onClick={savePanels}>
+                    Save layout
+                  </Button>
+                </Space>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+                  gap: 16,
+                }}
+              >
+                {panels.map((p) => (
+                  <ChartPanel
+                    key={p.id}
+                    datasetId={id}
+                    schema={schema}
+                    panel={p}
+                    onChange={updateOne}
+                    onDelete={() => deleteOne(p.id)}
+                    onDuplicate={() => duplicateOne(p)}
+                  />
+                ))}
+              </div>
+            </div>
           )}
         </Content>
       </Layout>

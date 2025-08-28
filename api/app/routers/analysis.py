@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os
@@ -15,8 +15,21 @@ from app.db import get_db
 from app.models import Dataset, User
 from app.utils.deps import current_user
 from app.mongo import get_mongo
-from app.utils.dataread import read_table_any, dtype_of, guess_role
+from app.utils.dataread import read_table_any, dtype_of, guess_role, scan_any
+from app.utils.filters import apply_filters, apply_filters_pl
+from app.utils.cache import cache, make_key
+import polars as pl
 
+def _file_signature(path: str) -> dict:
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="File not found on server")
+    return {"size": stat.st_size, "mtime": int(stat.st_mtime)}
+
+
+def _cache_key(dataset_id: int, sig: dict, kind: str) -> dict:
+    return {"dataset_id": dataset_id, "kind": kind, "sig": sig}
 router = APIRouter()
 
 def _file_signature(path: str) -> dict:
@@ -164,3 +177,163 @@ def download_dataset(
         )
     else:
         raise HTTPException(status_code=400, detail="Unsupported format")
+
+@router.post("/datasets/{dataset_id}/chart")
+def dataset_chart(
+    dataset_id: int,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(current_user),
+):
+    ds = (
+        db.query(Dataset)
+        .filter(Dataset.id == dataset_id, Dataset.owner_id == user.id)
+        .first()
+    )
+    if not ds:
+        raise HTTPException(404, "Dataset not found")
+
+    key = make_key(dataset_id, payload)
+    if key in cache:
+        return cache[key]
+
+    kind = payload.get("kind")
+    x = payload.get("x")
+    y = payload.get("y")
+    bins = int(payload.get("bins", 20))
+    agg = payload.get("agg", "sum")
+    filters = payload.get("filters", [])
+    sample = int(payload.get("sample", 0))
+
+    ldf = scan_any(ds.storage_path)
+
+    ldf = apply_filters_pl(ldf, filters)
+
+    if sample:
+        ldf = ldf.sample(n=sample, shuffle=True, seed=42)
+
+    needed = [c for c in {x, y} if c]
+    if needed:
+        ldf = ldf.select([pl.col(c) for c in needed])
+
+    if kind == "hist":
+        if not x:
+            raise HTTPException(400, "Column not found")
+
+        t = ldf.select(pl.col(x).cast(pl.Float64).alias("_x")).drop_nulls(["_x"])
+
+        stats = (
+            t.select([pl.col("_x").min().alias("min"), pl.col("_x").max().alias("max")])
+            .collect()
+            .row(0)
+        )
+        minv, maxv = float(stats[0]), float(stats[1])
+
+        if not (minv < maxv):
+            out = {"kind": "hist", "edges": [minv, maxv], "counts": [0]}
+            cache[key] = out
+            return out
+
+        b = max(5, min(50, bins))
+        edges = [minv + (maxv - minv) * i / b for i in range(b + 1)]
+
+        bin_expr = (
+            ((pl.col("_x") - minv) / (maxv - minv) * b)
+            .floor()
+            .clip(0, b - 1)
+            .cast(pl.Int64)
+            .alias("bin")
+        )
+
+        agg = t.select(bin_expr).group_by("bin").len().collect()
+        counts_map = {int(a): int(b) for a, b in agg.iter_rows()}
+        counts = [counts_map.get(i, 0) for i in range(b)]
+
+        res = {"kind": "hist", "edges": edges, "counts": counts}
+        cache[key] = res
+        return res
+
+    if kind == "bar":
+        if not x:
+            raise HTTPException(400, "X not found")
+
+        if y:
+            g = ldf.group_by(x)
+            if agg == "mean":
+                ag = g.agg(pl.col(y).mean().alias("y"))
+            elif agg == "count":
+                ag = g.agg(pl.count().alias("y"))
+            else:
+                ag = g.agg(pl.col(y).sum().alias("y"))
+            ag = ag.sort("y", descending=True).limit(50).collect()
+            data = [{"x": str(a), "y": float(b)} for a, b in ag.select([x, "y"]).iter_rows()]
+        else:
+            vc = ldf.group_by(x).len().sort("len", descending=True).limit(50).collect()
+            data = [{"x": str(a), "y": int(b)} for a, b in vc.iter_rows()]
+
+        res = {"kind": "bar", "data": data}
+        cache[key] = res
+        return res
+
+    if kind == "line":
+        if not x or not y:
+            raise HTTPException(400, "X or Y not found")
+
+        try:
+            xx = pl.col(x).str.strptime(pl.Datetime, strict=True, exact=False, infer_dtype=True)
+            tdf = ldf.with_columns(xx.alias("_x")).drop_nulls("_x")
+        except Exception:
+            tdf = ldf.with_columns(pl.col(x).cast(pl.Float64).alias("_x")).drop_nulls("_x")
+
+        ag = (
+            tdf.group_by("_x")
+            .agg(pl.col(y).mean().alias("y"))
+            .sort("_x")
+            .limit(2000)
+            .collect()
+        )
+        data = [
+            {"x": (a.isoformat() if hasattr(a, "isoformat") else float(a)), "y": float(b)}
+            for a, b in ag.iter_rows()
+        ]
+        res = {"kind": "line", "data": data}
+        cache[key] = res
+        return res
+
+    if kind == "scatter":
+        if not x or not y:
+            raise HTTPException(400, "X or Y not found")
+
+        max_pts = min(sample or 5000, 5000)
+
+        t = (
+            ldf.select([
+                pl.col(x).cast(pl.Float64, strict=False).alias("_x_num"),
+                pl.col(y).cast(pl.Float64, strict=False).alias("_y_num"),
+
+                pl.col(x)
+                .cast(pl.Utf8, strict=False)
+                .str.strptime(pl.Datetime, strict=False, exact=False)
+                .dt.timestamp("s")
+                .cast(pl.Float64, strict=False)
+                .alias("_x_ts"),
+            ])
+            .select([
+                pl.coalesce([pl.col("_x_num"), pl.col("_x_ts")]).alias("x"),
+                pl.col("_y_num").alias("y"),
+            ])
+            .drop_nulls(["x", "y"])
+            .sample(n=max_pts, shuffle=True, seed=42)
+            .collect()
+        )
+
+        if t.height == 0:
+            res = {"kind": "scatter", "data": []}
+            cache[key] = res; return res
+
+        data = [{"x": float(a), "y": float(b)} for a, b in t.iter_rows()]
+        res = {"kind": "scatter", "data": data}
+        cache[key] = res
+        return res
+
+    raise HTTPException(400, "Unknown chart kind")

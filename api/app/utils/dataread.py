@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-
+import polars as pl
 READ_MAX_ROWS = 200_000
 
 def read_table_any(path: str, nrows: int | None = None) -> pd.DataFrame:
@@ -32,3 +32,13 @@ def dtype_of(series: pd.Series) -> str:
     if pd.api.types.is_bool_dtype(series): return "boolean"
     if pd.api.types.is_datetime64_any_dtype(series): return "datetime"
     return "string"
+def scan_any(path: str) -> pl.LazyFrame:
+    ext = os.path.splitext(path)[1].lower()
+    if ext in (".parquet", ".pq"):
+        return pl.scan_parquet(path)
+    if ext in (".csv", ".tsv"):
+        sep = "\t" if ext == ".tsv" else ","
+        return pl.scan_csv(path, separator=sep, infer_schema_length=1000)
+    if ext in (".ndjson", ".jsonl"):
+        return pl.scan_ndjson(path)
+    return pl.from_pandas(pd.read_excel(path)).lazy()
