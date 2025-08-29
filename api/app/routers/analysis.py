@@ -305,35 +305,37 @@ def dataset_chart(
             raise HTTPException(400, "X or Y not found")
 
         max_pts = min(sample or 5000, 5000)
-
-        t = (
-            ldf.select([
-                pl.col(x).cast(pl.Float64, strict=False).alias("_x_num"),
-                pl.col(y).cast(pl.Float64, strict=False).alias("_y_num"),
-
-                pl.col(x)
-                .cast(pl.Utf8, strict=False)
-                .str.strptime(pl.Datetime, strict=False, exact=False)
-                .dt.timestamp("s")
-                .cast(pl.Float64, strict=False)
-                .alias("_x_ts"),
-            ])
-            .select([
-                pl.coalesce([pl.col("_x_num"), pl.col("_x_ts")]).alias("x"),
-                pl.col("_y_num").alias("y"),
-            ])
-            .drop_nulls(["x", "y"])
-            .sample(n=max_pts, shuffle=True, seed=42)
-            .collect()
-        )
-
-        if t.height == 0:
-            res = {"kind": "scatter", "data": []}
-            cache[key] = res; return res
-
-        data = [{"x": float(a), "y": float(b)} for a, b in t.iter_rows()]
-        res = {"kind": "scatter", "data": data}
-        cache[key] = res
-        return res
-
+        
+        try:
+           
+            df = (
+                ldf.select([
+                    pl.col(x).alias("x"),
+                    pl.col(y).alias("y")
+                ])
+                .with_columns([
+                    pl.col("x").cast(pl.Float64, strict=False),
+                    pl.col("y").cast(pl.Float64, strict=False)
+                ])
+                .drop_nulls()
+                .collect()
+            )
+            
+           
+            if df.height > max_pts:
+                df = df.sample(n=max_pts, seed=42)
+            
+            
+            data = [
+                {"x": float(x), "y": float(y)} 
+                for x, y in df.rows()
+            ]
+            
+            res = {"kind": "scatter", "data": data}
+            cache[key] = res
+            return res
+            
+        except Exception as e:
+            print(f"Error generating scatter plot: {e}")
+            return {"kind": "scatter", "data": [], "error": "Could not generate scatter plot"}
     raise HTTPException(400, "Unknown chart kind")
