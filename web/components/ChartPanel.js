@@ -124,12 +124,29 @@ function ChartPanel({
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const { cols, numCols } = Options({ schema });
+  function hasRequiredFields(p) {
+    if (p.kind === "hist") return !!p.x;
+    if (p.kind === "bar") return !!p.x; // y optional
+    if (p.kind === "line") return !!p.x && !!p.y;
+    if (p.kind === "scatter") return !!p.x && !!p.y;
+    return false;
+  }
 
   useDebounced(
     async () => {
+      // skip until user selects necessary fields
+      if (!hasRequiredFields(panel)) {
+        setData(null);
+        return;
+      }
       setLoading(true);
       try {
-        setData(await runChart(datasetId, panel));
+        const res = await runChart(datasetId, panel);
+        setData(res);
+      } catch (e) {
+        // keep panel visible without crashing
+        console.error("runChart failed", e);
+        setData(null);
       } finally {
         setLoading(false);
       }
