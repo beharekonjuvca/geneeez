@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
 import {
   Card,
   Space,
@@ -30,89 +36,86 @@ import { runChart } from "../lib/api/charts";
 const { Text } = Typography;
 
 function useDebounced(fn, delay, deps) {
-  const t = useRef();
+  const callback = useRef(fn);
+  const timeout = useRef();
+
   useEffect(() => {
-    clearTimeout(t.current);
-    t.current = setTimeout(() => fn(), delay);
-    return () => clearTimeout(t.current);
+    callback.current = fn;
+  }, [fn]);
+
+  useEffect(() => {
+    clearTimeout(timeout.current);
+    timeout.current = setTimeout(() => callback.current(), delay);
+    return () => clearTimeout(timeout.current);
+    // `deps` is the dependency array passed by caller
   }, deps);
 }
 
-function Options({ schema }) {
-  const cols = useMemo(
-    () =>
-      (schema?.columns || []).map((c) => ({ label: c.name, value: c.name })),
-    [schema]
-  );
-  const numCols = useMemo(
-    () =>
-      schema?.columns
-        ?.filter((c) => ["number", "integer"].includes(c.dtype))
-        .map((c) => ({ label: c.name, value: c.name })) || [],
-    [schema]
-  );
-  return { cols, numCols };
-}
+const MemoizedBarChart = React.memo(({ data }) => (
+  <ResponsiveContainer width="100%" height="100%">
+    <BarChart data={data}>
+      <XAxis dataKey="x" hide />
+      <YAxis hide />
+      <Tooltip />
+      <Bar dataKey="y" />
+    </BarChart>
+  </ResponsiveContainer>
+));
 
-function ChartInner({ data }) {
-  if (!data)
+const MemoizedLineChart = React.memo(({ data }) => (
+  <ResponsiveContainer width="100%" height="100%">
+    <LineChart data={data}>
+      <XAxis dataKey="x" hide />
+      <YAxis hide />
+      <Tooltip />
+      <Line type="monotone" dataKey="y" dot={false} />
+    </LineChart>
+  </ResponsiveContainer>
+));
+
+const MemoizedScatterChart = React.memo(({ data }) => (
+  <ResponsiveContainer width="100%" height="100%">
+    <ScatterChart>
+      <XAxis dataKey="x" type="number" hide />
+      <YAxis dataKey="y" type="number" hide />
+      <Tooltip />
+      <Scatter data={data} />
+    </ScatterChart>
+  </ResponsiveContainer>
+));
+
+/** Inner renderer */
+const ChartInner = React.memo(({ data }) => {
+  if (!data) {
     return (
       <div style={{ display: "grid", placeItems: "center", height: "100%" }}>
         <Text type="secondary">No data</Text>
       </div>
     );
-  if (data.kind === "hist")
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart
+  }
+
+  switch (data.kind) {
+    case "hist":
+      return (
+        <MemoizedBarChart
           data={(data.counts || []).map((c, i) => ({
-            label: `${data.edges[i]}–${data.edges[i + 1]}`,
+            x: `${data.edges[i]}–${data.edges[i + 1]}`, // fixed: X key exists
             y: c,
           }))}
-        >
-          <XAxis dataKey="label" hide />
-          <YAxis hide />
-          <Tooltip />
-          <Bar dataKey="y" />
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  if (data.kind === "bar")
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data.data || []}>
-          <XAxis dataKey="x" hide />
-          <YAxis hide />
-          <Tooltip />
-          <Bar dataKey="y" />
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  if (data.kind === "line")
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data.data || []}>
-          <XAxis dataKey="x" hide />
-          <YAxis hide />
-          <Tooltip />
-          <Line type="monotone" dataKey="y" dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  if (data.kind === "scatter")
-    return (
-      <ResponsiveContainer width="100%" height="100%">
-        <ScatterChart>
-          <XAxis dataKey="x" type="number" hide />
-          <YAxis dataKey="y" type="number" hide />
-          <Tooltip />
-          <Scatter data={data.data || []} />
-        </ScatterChart>
-      </ResponsiveContainer>
-    );
-  return null;
-}
+        />
+      );
+    case "bar":
+      return <MemoizedBarChart data={data.data || []} />;
+    case "line":
+      return <MemoizedLineChart data={data.data || []} />;
+    case "scatter":
+      return <MemoizedScatterChart data={data.data || []} />;
+    default:
+      return null;
+  }
+});
 
+/** Main panel */
 function ChartPanel({
   datasetId,
   schema,
@@ -123,39 +126,65 @@ function ChartPanel({
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const { cols, numCols } = Options({ schema });
-  function hasRequiredFields(p) {
+
+  const cols = useMemo(
+    () =>
+      (schema?.columns || []).map((c) => ({ label: c.name, value: c.name })),
+    [schema]
+  );
+
+  const numCols = useMemo(
+    () =>
+      schema?.columns
+        ?.filter((c) => ["number", "integer"].includes(c.dtype))
+        .map((c) => ({ label: c.name, value: c.name })) || [],
+    [schema]
+  );
+
+  const hasRequiredFields = useCallback((p) => {
     if (p.kind === "hist") return !!p.x;
-    if (p.kind === "bar") return !!p.x; // y optional
+    if (p.kind === "bar") return !!p.x;
     if (p.kind === "line") return !!p.x && !!p.y;
     if (p.kind === "scatter") return !!p.x && !!p.y;
     return false;
-  }
+  }, []);
 
-  useDebounced(
-    async () => {
-      // skip until user selects necessary fields
-      if (!hasRequiredFields(panel)) {
-        setData(null);
-        return;
-      }
-      setLoading(true);
-      try {
-        const res = await runChart(datasetId, panel);
-        setData(res);
-      } catch (e) {
-        // keep panel visible without crashing
-        console.error("runChart failed", e);
-        setData(null);
-      } finally {
-        setLoading(false);
-      }
-    },
-    250,
-    [datasetId, JSON.stringify(panel)]
+  const fetchData = useCallback(async () => {
+    if (!panel?.kind) return;
+    if (!hasRequiredFields(panel)) {
+      setData(null);
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await runChart(datasetId, panel);
+      setData(res);
+    } catch (e) {
+      console.error("runChart failed", e);
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [datasetId, panel, hasRequiredFields]);
+
+  useDebounced(fetchData, 250, [fetchData]);
+
+  const setField = useCallback(
+    (k, v) => onChange?.({ ...panel, [k]: v }),
+    [panel, onChange]
   );
 
-  const setField = (k, v) => onChange({ ...panel, [k]: v });
+  const chartOptions = useMemo(
+    () => [
+      { value: "hist", label: "Histogram" },
+      { value: "bar", label: "Bar" },
+      { value: "line", label: "Line" },
+      { value: "scatter", label: "Scatter" },
+    ],
+    []
+  );
+
+  const currentKind = panel?.kind || "bar";
 
   return (
     <Card size="small" className="card">
@@ -167,7 +196,7 @@ function ChartPanel({
           marginBottom: 8,
         }}
       >
-        <Text strong>{panel.kind.toUpperCase()}</Text>
+        <Text strong>{currentKind.toUpperCase()}</Text>
         <Space>
           <Button
             icon={<CopyOutlined />}
@@ -178,7 +207,7 @@ function ChartPanel({
             icon={<ReloadOutlined />}
             size="small"
             loading={loading}
-            onClick={() => onChange({ ...panel })}
+            onClick={fetchData}
           />
           <Button
             icon={<DeleteOutlined />}
@@ -193,17 +222,12 @@ function ChartPanel({
         <Select
           size="small"
           style={{ width: 140 }}
-          value={panel.kind}
+          value={currentKind}
           onChange={(v) => setField("kind", v)}
-          options={[
-            { value: "hist", label: "Histogram" },
-            { value: "bar", label: "Bar" },
-            { value: "line", label: "Line" },
-            { value: "scatter", label: "Scatter" },
-          ]}
+          options={chartOptions}
         />
 
-        {panel.kind === "hist" && (
+        {currentKind === "hist" && (
           <>
             <Select
               size="small"
@@ -218,12 +242,13 @@ function ChartPanel({
               min={5}
               max={50}
               value={panel.bins || 20}
-              onChange={(v) => setField("bins", v)}
+              onChange={(v) => setField("bins", v ?? 20)}
               placeholder="bins"
             />
           </>
         )}
-        {panel.kind === "bar" && (
+
+        {currentKind === "bar" && (
           <>
             <Select
               size="small"
@@ -232,6 +257,7 @@ function ChartPanel({
               value={panel.x}
               options={cols}
               onChange={(v) => setField("x", v)}
+              allowClear
             />
             <Select
               size="small"
@@ -244,7 +270,8 @@ function ChartPanel({
             />
           </>
         )}
-        {panel.kind === "line" && (
+
+        {currentKind === "line" && (
           <>
             <Select
               size="small"
@@ -264,7 +291,8 @@ function ChartPanel({
             />
           </>
         )}
-        {panel.kind === "scatter" && (
+
+        {currentKind === "scatter" && (
           <>
             <Select
               size="small"
