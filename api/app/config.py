@@ -12,7 +12,10 @@ class Settings(BaseModel):
     ACCESS_TTL_MIN: int = int(os.getenv("ACCESS_TTL_MIN", "15"))
     REFRESH_TTL_DAYS: int = int(os.getenv("REFRESH_TTL_DAYS", "7"))
 
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+psycopg://geneeez:geneeez_pw@localhost:5432/geneeez")
+    STORAGE_DIR: str = os.getenv("STORAGE_DIR", "storage")
+    UPLOAD_DIR: str  = os.getenv("UPLOAD_DIR",  "uploads") 
+
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+psycopg://geneeez:geneeez_pw@localhost:5332/geneeez")
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB: str = "geneeez"
 

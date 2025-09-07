@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, field_validator, Field
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any, Dict, Literal
 import re
 
 class AuthIn(BaseModel):
@@ -40,3 +40,23 @@ class DatasetOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
+class RecipeTemplateOut(BaseModel):
+    key: str
+    display_name: str
+    description: Optional[str] = None
+    params_schema: Dict[str, Any]
+    class Config: from_attributes = True
+
+class RunParams(BaseModel):
+    recipe_key: Literal["correlation", "pca", "de", "heatmap"]
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+class RunOut(BaseModel):
+    id: int
+    dataset_id: int
+    recipe_key: str
+    status: str
+    cache_hit: bool = False
+    artifacts_json: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    class Config: from_attributes = True

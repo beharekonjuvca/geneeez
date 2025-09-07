@@ -18,6 +18,7 @@ import {
   InfoCircleOutlined,
   DownloadOutlined,
   LockOutlined,
+  ExperimentOutlined,
 } from "@ant-design/icons";
 import AppShell from "../../components/AppShell";
 import { useAuth } from "../../context/AuthContext";
@@ -31,6 +32,7 @@ import ChartPanel from "../../components/ChartPanel";
 import { saveRecipe, listRecipes, updateRecipe } from "../../lib/api/recipes";
 import CorrelationPanel from "../../components/CorrelationPanel";
 import PcaPanel from "../../components/PcaPanel";
+import AnalyticsPanel from "../../components/AnalyticsPanel";
 
 const { Sider, Content } = Layout;
 const { Title, Text } = Typography;
@@ -237,6 +239,11 @@ export default function DatasetDetail() {
                 icon: <BarChartOutlined />,
                 label: "Visualize",
               },
+              {
+                key: "analytics",
+                icon: <ExperimentOutlined />,
+                label: "Analytics",
+              },
             ]}
           />
         </Sider>
@@ -413,6 +420,7 @@ export default function DatasetDetail() {
               </div>
             </div>
           )}
+          {active === "analytics" && <AnalyticsPanel datasetId={Number(id)} />}
         </Content>
       </Layout>
 

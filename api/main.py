@@ -3,8 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_db
 from app.routers import auth, datasets, analysis, recipes, stats
+from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="geneeez-api")
+
+app.mount("/files", StaticFiles(directory="storage", html=False), name="files")
 
 app.add_middleware(
     CORSMiddleware,
