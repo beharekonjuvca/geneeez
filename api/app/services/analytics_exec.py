@@ -6,27 +6,101 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd, numpy as np
 from sqlalchemy.orm import Session
-from app.models import AnalysisRun, RunStatus
+from app.models import AnalysisRun, RunStatus, Dataset
 from app.config import settings
+import os, re
 
 STORAGE_ROOT = Path(settings.STORAGE_DIR)
 UPLOAD_ROOT  = Path(settings.UPLOAD_DIR)
 
-def _dataset_path(ds) -> Path:
-    
+UPLOAD_ROOT = Path(settings.UPLOAD_DIR).resolve()
+ALLOWED_EXTS = {".parquet", ".pq", ".csv", ".tsv", ".txt", ".xlsx", ".xls"}
+
+def _log(msg, *args):
+    print("[analytics]", msg.format(*args))
+
+def _slug(s: str) -> str:
+    try:
+        return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
+    except Exception:
+        return ""
+
+def _pick_best(files: list[Path]) -> Path:
+    pref = {".parquet":0, ".pq":0, ".csv":1, ".tsv":2, ".txt":3, ".xlsx":4, ".xls":4}
+    files.sort(key=lambda p: (pref.get(p.suffix.lower(), 99), -p.stat().st_size))
+    return files[0]
+
+def _dataset_path(ds: Dataset) -> Path:
+    """
+    Find the dataset file under uploads/<owner_id>/... (your layout),
+    with helpful logs at every step. Falls back to a sensible single file
+    if no exact match by id/title is found.
+    """
+    _log("cwd: {}", Path(os.getcwd()).resolve())
+    _log("UPLOAD_ROOT: {}", UPLOAD_ROOT)
+    _log("dataset id={}, owner_id={}, title={!r}", ds.id, getattr(ds, "owner_id", None), getattr(ds, "title", None))
+
     for attr in ("file_path", "path", "storage_uri", "local_path"):
         v = getattr(ds, attr, None)
+        _log("check attr {} -> {}", attr, v)
         if v:
             p = Path(v)
+            _log("  exists={} resolved={}", p.exists(), p.resolve())
             if p.exists():
+                _log("using direct path: {}", p)
                 return p
 
-    if UPLOAD_ROOT.exists():
-        for pat in (f"{ds.id}.*", f"*{ds.id}*"):
-            for p in UPLOAD_ROOT.rglob(pat):
-                if p.is_file():
-                    return p
+    owner_id = str(getattr(ds, "owner_id", "") or "")
+    user_dir = (UPLOAD_ROOT / owner_id)
+    _log("user_dir {}", user_dir)
 
+    if not user_dir.exists():
+        try:
+            sample = [str(p) for p in list(UPLOAD_ROOT.iterdir())[:20]]
+        except FileNotFoundError:
+            sample = ["<uploads dir missing>"]
+        _log("user_dir missing. top-level under uploads: {}", sample)
+        raise ValueError("Dataset file path not found (user dir missing)")
+
+    def collect(base: Path, limit=5000) -> list[Path]:
+        files = []
+        for i, p in enumerate(base.rglob("*")):
+            if i > limit:
+                _log("scan limit {} reached under {}", limit, base)
+                break
+            try:
+                if p.is_file() and p.suffix.lower() in ALLOWED_EXTS:
+                    files.append(p)
+            except Exception:
+                pass
+        return files
+
+    id_pat = str(ds.id)
+    by_id = [p for p in collect(user_dir) if id_pat in str(p)]
+    _log("matches containing dataset id '{}': {}", id_pat, len(by_id))
+    if by_id:
+        pick = _pick_best(by_id)
+        _log("picked by id: {}", pick)
+        return pick
+
+    title = getattr(ds, "title", None)
+    if title:
+        tslug = _slug(title)
+        by_title = [p for p in collect(user_dir) if tslug and tslug in str(p).lower()]
+        _log("matches containing title slug '{}': {}", tslug, len(by_title))
+        if by_title:
+            pick = _pick_best(by_title)
+            _log("picked by title: {}", pick)
+            return pick
+
+    all_files = collect(user_dir)
+    _log("fallback candidates under user dir: {}", len(all_files))
+    if all_files:
+        pick = _pick_best(all_files)
+        _log("picked fallback: {}", pick)
+        return pick
+
+    _log("_dataset_path FAILED for dataset {} (owner {})", ds.id, owner_id)
     raise ValueError("Dataset file path not found")
 
 def _load_df(p: Path) -> pd.DataFrame:
