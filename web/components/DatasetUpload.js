@@ -5,6 +5,33 @@ import { uploadDataset } from "../lib/api/datasets";
 
 const { Dragger } = Upload;
 
+const EXT_WHITELIST = [
+  ".csv",
+  ".tsv",
+  ".txt",
+  ".parquet",
+  ".pq",
+  ".xls",
+  ".xlsx",
+  ".csv.gz",
+  ".tsv.gz",
+  ".txt.gz",
+  ".parquet.gz",
+  ".pq.gz",
+];
+
+const MIME_WHITELIST = [
+  "text/plain",
+  "text/csv",
+  "application/gzip",
+  "application/x-gzip",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/octet-stream",
+];
+
+const ACCEPT = ".csv,.tsv,.txt,.parquet,.pq,.xls,.xlsx,.gz";
+
 export default function DatasetUpload({ open, onClose, onCreated }) {
   const [form] = Form.useForm();
   const [file, setFile] = useState(null);
@@ -14,14 +41,16 @@ export default function DatasetUpload({ open, onClose, onCreated }) {
     name: "file",
     multiple: false,
     maxCount: 1,
+    accept: ACCEPT,
     beforeUpload: (f) => {
-      const ok =
-        f.type === "text/csv" ||
-        f.type === "application/vnd.ms-excel" ||
-        f.type ===
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-      if (!ok) {
-        message.error("Please upload a CSV or Excel file");
+      const name = (f.name || "").toLowerCase();
+      const okExt = EXT_WHITELIST.some((ext) => name.endsWith(ext));
+      const okMime = MIME_WHITELIST.includes(f.type);
+
+      if (!okExt && !okMime) {
+        message.error(
+          "Unsupported file type. Use CSV/TSV/TXT/Parquet/XLS(X) — optionally .gz"
+        );
         return Upload.LIST_IGNORE;
       }
       setFile(f);
@@ -76,18 +105,21 @@ export default function DatasetUpload({ open, onClose, onCreated }) {
           name="title"
           rules={[{ required: true }, { max: 200 }]}
         >
-          <Input placeholder="e.g., Gene expression (TCGA BRCA)" />
+          <Input placeholder="e.g., GEO GSE… (series matrix)" />
         </Form.Item>
         <Form.Item label="Description" name="description">
           <Input.TextArea rows={3} placeholder="Short note (optional)" />
         </Form.Item>
         <Form.Item label="File" required>
-          <Dragger {...props} accept=".csv,.xls,.xlsx" style={{ padding: 8 }}>
+          <Dragger {...props} style={{ padding: 8 }}>
             <p className="ant-upload-drag-icon">
               <InboxOutlined />
             </p>
-            <p className="ant-upload-text">Drag & drop CSV / Excel here</p>
-            <p className="ant-upload-hint">or click to choose a file</p>
+            <p className="ant-upload-text">Drag & drop your file</p>
+            <p className="ant-upload-hint">
+              Allowed: .csv, .tsv, .txt, .parquet, .pq, .xls/.xlsx, and .gz
+              versions (e.g. series_matrix.txt.gz)
+            </p>
           </Dragger>
         </Form.Item>
       </Form>

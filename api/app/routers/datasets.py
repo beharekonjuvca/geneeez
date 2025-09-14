@@ -23,8 +23,14 @@ async def upload_dataset(
     db: Session = Depends(get_db),
     user: User = Depends(current_user),
 ):
-    allowed = {"text/csv", "application/vnd.ms-excel",
-               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}
+    allowed = {
+    "text/csv",
+    "text/plain",                     
+    "application/gzip",               
+    "application/x-gzip",             
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
     if file.content_type not in allowed:
         raise HTTPException(status_code=400, detail="Unsupported file type")
 

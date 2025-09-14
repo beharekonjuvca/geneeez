@@ -105,19 +105,33 @@ def _dataset_path(ds: Dataset) -> Path:
     raise ValueError("Dataset file path not found")
 
 def _load_df(p: Path) -> pd.DataFrame:
-    s = p.suffix.lower()
-    if s in (".csv", ".txt"):
-        try:
-            return pd.read_csv(p)
-        except Exception:
-            return pd.read_csv(p, sep="\t")
-    if s in (".tsv",):
-        return pd.read_csv(p, sep="\t")
-    if s in (".parquet", ".pq"):
+    compression = "infer" if p.suffix.lower() == ".gz" or str(p).endswith(".txt.gz") else None
+    name = p.name
+    if name.endswith(".txt.gz"):
+        ext = ".txt"
+    elif name.endswith(".tsv.gz"):
+        ext = ".tsv"
+    elif name.endswith(".csv.gz"):
+        ext = ".csv"
+    else:
+        ext = p.suffix.lower()
+
+    if ext in (".txt", ".tsv"):
+        return pd.read_csv(
+            p, sep="\t", comment="!", compression=compression, engine="python"
+        )
+
+    if ext in (".csv",):
+        return pd.read_csv(p, compression=compression)
+
+    if ext in (".parquet", ".pq"):
         return pd.read_parquet(p)
-    if s in (".xlsx", ".xls"):
+
+    if ext in (".xlsx", ".xls"):
         return pd.read_excel(p)
-    return pd.read_csv(p)
+
+    return pd.read_csv(p, compression=compression)
+
 
 def _outdir(run_id: int) -> Path:
     out = STORAGE_ROOT / "runs" / str(run_id)
@@ -137,14 +151,33 @@ def execute_inline(db: Session, run: AnalysisRun, ds):
     arts = {}
 
     if run.recipe_key == "correlation":
+        from scipy.cluster.hierarchy import linkage, leaves_list
         method = (run.params_json or {}).get("method", "spearman")
-        maxf = int((run.params_json or {}).get("max_features", 300))
-        sub = df.select_dtypes(include=np.number).iloc[:, :maxf]
-        corr = sub.corr(method=method)
-        corr.to_csv(outdir/"correlation.csv")
-        plt.figure(figsize=(6,5)); plt.imshow(corr.values, aspect="auto")
+        mode   = (run.params_json or {}).get("axis", "samples")  
+        max_n  = int((run.params_json or {}).get("max_n", 300))
+        do_cluster = bool((run.params_json or {}).get("cluster", True))
+
+        num = df.select_dtypes(include=np.number)
+
+        if mode == "samples":
+            X = num.iloc[:, :max_n]                
+            corr = X.corr(method=method)
+        else:  
+            X = num.T                            
+            keep = X.var(axis=0, skipna=True).nlargest(max_n).index
+            corr = X[keep].corr(method=method)
+
+        if do_cluster and corr.shape[0] > 2:
+            order = leaves_list(linkage(corr.fillna(0.0).values, method="average"))
+            corr = corr.iloc[order, order]
+
+        outdir = _outdir(run.id)
+        corr.to_csv(outdir / "correlation.csv")
+        plt.figure(figsize=(6,5))
+        plt.imshow(corr.values, aspect="auto")
         plt.colorbar(); plt.title(f"Correlation ({method})")
-        plt.tight_layout(); plt.savefig(outdir/"correlation.png"); plt.close()
+        plt.tight_layout(); plt.savefig(outdir / "correlation.png"); plt.close()
+
         arts = {
             "csv_url": _u(f"/files/runs/{run.id}/correlation.csv"),
             "pngs":   [_u(f"/files/runs/{run.id}/correlation.png")],
