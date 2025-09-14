@@ -186,18 +186,217 @@ def execute_inline(db: Session, run: AnalysisRun, ds):
     elif run.recipe_key == "pca":
         from sklearn.preprocessing import StandardScaler
         from sklearn.decomposition import PCA
-        X = df.select_dtypes(include=np.number).valuess
-        X = StandardScaler().fit_transform(X)
-        n = int((run.params_json or {}).get("n_components",10))
-        from math import inf
-        n = max(2, min(n, X.shape[1] if X.ndim == 2 else 2))
-        pca = PCA(n_components=n)
-        scores = pca.fit_transform(X)
-        pd.DataFrame(scores[:, :2], columns=["PC1","PC2"]).to_csv(outdir/"pca_scores.csv", index=False)
-        plt.figure(); plt.plot(pca.explained_variance_ratio_, marker="o")
-        plt.title("PCA Scree"); plt.tight_layout(); plt.savefig(outdir/"pca_scree.png"); plt.close()
-        arts = {"scores_csv": f"/files/runs/{run.id}/pca_scores.csv",
-                "pngs": [f"/files/runs/{run.id}/pca_scree.png"]}
+
+        p = run.params_json or {}
+        n_req      = int(p.get("n_components", 10))
+        top_genes  = int(p.get("top_genes", 1000))   
+        use_log1p  = bool(p.get("log1p", False))     
+
+        num_df = df.select_dtypes(include=np.number).copy()     
+        sample_ids = list(num_df.columns)
+
+        if use_log1p:
+            num_df = np.log1p(num_df)
+
+        # choose top-N variable genes (rows) by variance across samples
+        # use df['gene_id'] when present to carry gene names into loadings
+        if "gene_id" in df.columns and df.columns[0].lower() == "gene_id":
+            gene_ids_all = df["gene_id"].astype(str)
+        else:
+            # fallback: synthetic gene ids if not present
+            gene_ids_all = pd.Index([f"gene_{i}" for i in range(len(df))], name="gene_id")
+
+        # Align gene ids with numeric subset (same row order as df)
+        # num_df has the same index as df
+        variances = num_df.var(axis=1, skipna=True)
+        k = int(min(top_genes, len(variances)))
+        keep_idx = variances.nlargest(k).index
+        M = num_df.loc[keep_idx]                   
+        kept_gene_ids = gene_ids_all.loc[keep_idx].astype(str).to_numpy()
+
+        X = M.T.values                             
+
+        Xz = StandardScaler(with_mean=True, with_std=True).fit_transform(X)
+
+        # n cannot exceed min(n_samples, n_features)
+        n = max(2, min(n_req, Xz.shape[0], Xz.shape[1]))
+
+        pca = PCA(n_components=n, svd_solver="auto", random_state=0)
+        scores   = pca.fit_transform(Xz)          
+        loadings = pca.components_.T               
+        evr      = pca.explained_variance_ratio_   
+
+        outdir = _outdir(run.id)
+
+        # 1) scores per sample with sample_id
+        scores_df = pd.DataFrame(scores, columns=[f"PC{i+1}" for i in range(n)])
+        scores_df.insert(0, "sample_id", sample_ids)
+        scores_df.to_csv(outdir / "pca_scores.csv", index=False)
+
+        # 2) loadings per gene with gene_id
+        load_df = pd.DataFrame(loadings, columns=[f"PC{i+1}" for i in range(n)])
+        load_df.insert(0, "gene_id", kept_gene_ids)
+        load_df.to_csv(outdir / "pca_loadings.csv", index=False)
+
+        # 3) explained variance (+ cumulative) per PC
+        explained_df = pd.DataFrame({
+            "pc":        [f"PC{i+1}" for i in range(n)],
+            "explained": evr,
+            "cumulative": np.cumsum(evr)
+        })
+        explained_df.to_csv(outdir / "pca_explained.csv", index=False)
+
+        # Scree with cumulative
+        plt.figure()
+        x = np.arange(1, n + 1)
+        plt.plot(x, evr, marker="o", label="Explained")
+        plt.plot(x, np.cumsum(evr), marker="o", linestyle="--", label="Cumulative")
+        plt.xlabel("Principal component")
+        plt.ylabel("Explained variance ratio")
+        plt.title("PCA Scree")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(outdir / "pca_scree.png")
+        plt.close()
+
+        pc1_pct = round(100 * evr[0], 1) if n >= 1 else 0.0
+        pc2_pct = round(100 * evr[1], 1) if n >= 2 else 0.0
+
+        plt.figure()
+        plt.scatter(scores[:, 0], scores[:, 1], s=12)
+        plt.xlabel(f"PC1 ({pc1_pct}%)")
+        plt.ylabel(f"PC2 ({pc2_pct}%)")
+        plt.title("PCA (samples)")
+        plt.tight_layout()
+        plt.savefig(outdir / "pca_scatter.png")
+        plt.close()
+
+        arts = {
+            "scores_csv":    _u(f"/files/runs/{run.id}/pca_scores.csv"),
+            "loadings_csv":  _u(f"/files/runs/{run.id}/pca_loadings.csv"),
+            "explained_csv": _u(f"/files/runs/{run.id}/pca_explained.csv"),
+            "pngs": [
+                _u(f"/files/runs/{run.id}/pca_scree.png"),
+                _u(f"/files/runs/{run.id}/pca_scatter.png"),
+            ],
+        }
+
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.decomposition import PCA
+
+        p = run.params_json or {}
+        n = int(p.get("n_components", 10))
+        top_genes = int(p.get("top_genes", 1000))     
+        use_log1p = bool(p.get("log1p", False))       
+
+        M = df.select_dtypes(include=np.number).copy()
+        if use_log1p:
+            M = np.log1p(M)
+
+        # keep top-N variable genes (rows if genes are rows; if genes are columns, transpose)
+        # Our canonical matrix is genes in rows, samples in columns (first col 'gene_id').
+        if "gene_id" in df.columns and df.columns[0].lower() == "gene_id":
+            genes = df["gene_id"].astype(str).values
+            X = M.values  
+            if X.shape[0] > top_genes:
+                keep_idx = np.argsort(X.var(axis=1))[-top_genes:]
+                X = X[keep_idx, :]
+                genes = genes[keep_idx]
+            X = StandardScaler(with_mean=True, with_std=True).fit_transform(X)
+            Xs = X.T
+            pca = PCA(n_components=max(2, min(n, Xs.shape[1])))
+            scores = pca.fit_transform(Xs)  
+            loadings = pca.components_.T   
+            pd.DataFrame(
+                scores[:, :2], columns=["PC1","PC2"]
+            ).to_csv(outdir/"pca_scores.csv", index=False)
+            pd.DataFrame(
+                loadings, index=genes, columns=[f"PC{i+1}" for i in range(pca.n_components_)]
+            ).to_csv(outdir/"pca_loadings.csv")
+        else:
+            X = M.values.T
+            X = StandardScaler(with_mean=True, with_std=True).fit_transform(X)
+            pca = PCA(n_components=max(2, min(n, X.shape[1])))
+            scores = pca.fit_transform(X)
+            pd.DataFrame(scores[:, :2], columns=["PC1","PC2"]).to_csv(outdir/"pca_scores.csv", index=False)
+
+        evr = pca.explained_variance_ratio_
+        pc1_pct = round(100*evr[0], 1)
+        pc2_pct = round(100*evr[1], 1)
+
+        # Scree + cumulative
+        plt.figure()
+        x = np.arange(1, len(evr)+1)
+        plt.plot(x, evr, marker="o", label="Explained")
+        plt.plot(x, np.cumsum(evr), marker="o", linestyle="--", label="Cumulative")
+        plt.xlabel("Principal component"); plt.ylabel("Explained variance ratio")
+        plt.title("PCA Scree"); plt.legend(); plt.tight_layout()
+        plt.savefig(outdir/"pca_scree.png"); plt.close()
+
+        # Scatter
+        plt.figure()
+        plt.scatter(scores[:,0], scores[:,1], s=12)
+        plt.xlabel(f"PC1 ({pc1_pct}%)"); plt.ylabel(f"PC2 ({pc2_pct}%)")
+        plt.title("PCA (samples)"); plt.tight_layout()
+        plt.savefig(outdir/"pca_scatter.png"); plt.close()
+
+        arts = {
+            "scores_csv": f"/files/runs/{run.id}/pca_scores.csv",
+            "loadings_csv": f"/files/runs/{run.id}/pca_loadings.csv",
+            "explained_csv": f"/files/runs/{run.id}/pca_explained.csv",
+            "pngs": [
+                f"/files/runs/{run.id}/pca_scree.png",
+                f"/files/runs/{run.id}/pca_scatter.png",
+            ],
+        }
+
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.decomposition import PCA
+
+        num_df = df.select_dtypes(include=np.number)
+
+        X = num_df.T.values  
+
+        X = StandardScaler(with_mean=True, with_std=True).fit_transform(X)
+
+        req_n = int((run.params_json or {}).get("n_components", 10))
+        n = max(2, min(req_n, X.shape[1]))  
+
+        pca = PCA(n_components=n, svd_solver="auto", random_state=0)
+        scores = pca.fit_transform(X)  
+
+        # Save PC1/PC2 coordinates per sample
+        pc12 = pd.DataFrame(scores[:, :2], columns=["PC1", "PC2"])
+        pc12.to_csv(outdir / "pca_scores.csv", index=False)
+
+        # Scree plot
+        plt.figure()
+        plt.plot(np.arange(1, n + 1), pca.explained_variance_ratio_, marker="o")
+        plt.xlabel("Principal component")
+        plt.ylabel("Explained variance ratio")
+        plt.title("PCA Scree")
+        plt.tight_layout()
+        plt.savefig(outdir / "pca_scree.png")
+        plt.close()
+
+        # Scatter of PC1 vs PC2 (samples)
+        plt.figure()
+        plt.scatter(pc12["PC1"], pc12["PC2"], s=12)
+        plt.xlabel("PC1")
+        plt.ylabel("PC2")
+        plt.title("PCA (samples)")
+        plt.tight_layout()
+        plt.savefig(outdir / "pca_scatter.png")
+        plt.close()
+
+        arts = {
+            "scores_csv": _u(f"/files/runs/{run.id}/pca_scores.csv"),
+            "pngs": [
+                _u(f"/files/runs/{run.id}/pca_scree.png"),
+                _u(f"/files/runs/{run.id}/pca_scatter.png"),
+            ],
+            "explained_variance_ratio": pca.explained_variance_ratio_.tolist(),
+        }
 
     elif run.recipe_key == "de":
         from scipy import stats

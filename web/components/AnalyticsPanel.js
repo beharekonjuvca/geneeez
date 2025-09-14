@@ -88,18 +88,45 @@ export default function AnalyticsPanel({ datasetId }) {
     }
     if (chosen.key === "pca") {
       return (
-        <div>
-          <Text strong>n_components</Text>
-          <br />
-          <InputNumber
-            min={2}
-            max={50}
-            value={params.n_components ?? 10}
-            onChange={(v) =>
-              setParams((p) => ({ ...p, n_components: Number(v) }))
-            }
-          />
-        </div>
+        <Space direction="vertical" style={{ width: "100%" }}>
+          <div>
+            <Text strong>n_components</Text>
+            <br />
+            <InputNumber
+              min={2}
+              max={50}
+              value={params.n_components ?? 10}
+              onChange={(v) =>
+                setParams((p) => ({ ...p, n_components: Number(v) }))
+              }
+            />
+          </div>
+          <div>
+            <Text strong>Top variable genes</Text>
+            <br />
+            <InputNumber
+              min={200}
+              max={10000}
+              value={params.top_genes ?? 1000}
+              onChange={(v) =>
+                setParams((p) => ({ ...p, top_genes: Number(v) }))
+              }
+            />
+          </div>
+          <div>
+            <Text strong>Log1p</Text>
+            <br />
+            <Select
+              value={params.log1p ?? false}
+              onChange={(v) => setParams((p) => ({ ...p, log1p: v }))}
+              style={{ width: 120 }}
+              options={[
+                { value: false, label: "No" },
+                { value: true, label: "Yes" },
+              ]}
+            />
+          </div>
+        </Space>
       );
     }
     if (chosen.key === "de") {
