@@ -18,5 +18,6 @@ class Settings(BaseModel):
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql+psycopg://geneeez:geneeez_pw@localhost:5332/geneeez")
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB: str = "geneeez"
+    PUBLIC_API_BASE: str = os.getenv("PUBLIC_API_BASE", "http://127.0.0.1:8080")
 
 settings = Settings()

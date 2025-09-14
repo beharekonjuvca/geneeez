@@ -34,6 +34,10 @@ class Dataset(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     storage_path: Mapped[str] = mapped_column(String(500)) 
+    @property
+    def file_path(self) -> str | None:
+        return self.storage_path
+
     original_filename: Mapped[str] = mapped_column(String(255))
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     file_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)

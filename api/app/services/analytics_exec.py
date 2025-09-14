@@ -15,6 +15,7 @@ UPLOAD_ROOT  = Path(settings.UPLOAD_DIR)
 
 UPLOAD_ROOT = Path(settings.UPLOAD_DIR).resolve()
 ALLOWED_EXTS = {".parquet", ".pq", ".csv", ".tsv", ".txt", ".xlsx", ".xls"}
+BASE = settings.PUBLIC_API_BASE.rstrip("/")
 
 def _log(msg, *args):
     print("[analytics]", msg.format(*args))
@@ -122,6 +123,8 @@ def _outdir(run_id: int) -> Path:
     out = STORAGE_ROOT / "runs" / str(run_id)
     out.mkdir(parents=True, exist_ok=True)
     return out
+def _u(path: str) -> str:
+    return f"{BASE}{path}"
 
 def execute_inline(db: Session, run: AnalysisRun, ds):
     run.status = RunStatus.running
@@ -142,13 +145,15 @@ def execute_inline(db: Session, run: AnalysisRun, ds):
         plt.figure(figsize=(6,5)); plt.imshow(corr.values, aspect="auto")
         plt.colorbar(); plt.title(f"Correlation ({method})")
         plt.tight_layout(); plt.savefig(outdir/"correlation.png"); plt.close()
-        arts = {"csv_url": f"/files/runs/{run.id}/correlation.csv",
-                "pngs": [f"/files/runs/{run.id}/correlation.png"]}
+        arts = {
+            "csv_url": _u(f"/files/runs/{run.id}/correlation.csv"),
+            "pngs":   [_u(f"/files/runs/{run.id}/correlation.png")],
+        }
 
     elif run.recipe_key == "pca":
         from sklearn.preprocessing import StandardScaler
         from sklearn.decomposition import PCA
-        X = df.select_dtypes(include=np.number).values
+        X = df.select_dtypes(include=np.number).valuess
         X = StandardScaler().fit_transform(X)
         n = int((run.params_json or {}).get("n_components",10))
         from math import inf

@@ -178,9 +178,9 @@ export default function AnalyticsPanel({ datasetId }) {
           {a.html_url && <a href={a.html_url}>View HTML Report</a>}
           {a.ipynb_url && <a href={a.ipynb_url}>Download Notebook</a>}
         </Space>
-        <pre style={{ background: "#fafafa", padding: 12, borderRadius: 8 }}>
+        {/* <pre style={{ background: "#fafafa", padding: 12, borderRadius: 8 }}>
           {JSON.stringify(a, null, 2)}
-        </pre>
+        </pre> */}
       </Space>
     );
   };
