@@ -1,14 +1,41 @@
 import { api } from "./client";
 
-export async function listDatasets() {
-  const { data } = await api.get("/datasets");
+export async function listDatasets({
+  q,
+  min_rows,
+  max_rows,
+  min_cols,
+  max_cols,
+  created_from,
+  created_to,
+  order_by,
+  direction,
+  limit,
+  project_id,
+} = {}) {
+  const { data } = await api.get("/datasets", {
+    params: {
+      q,
+      min_rows,
+      max_rows,
+      min_cols,
+      max_cols,
+      created_from,
+      created_to,
+      order_by,
+      direction,
+      limit,
+      project_id,
+    },
+  });
   return data;
 }
 
-export async function uploadDataset({ title, description, file }) {
+export async function uploadDataset({ title, description, file, project_id }) {
   const fd = new FormData();
   fd.append("title", title);
   if (description) fd.append("description", description);
+  if (project_id) fd.append("project_id", String(project_id));
   fd.append("file", file);
 
   const { data } = await api.post("/datasets/upload", fd, {

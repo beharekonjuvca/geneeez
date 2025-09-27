@@ -58,6 +58,8 @@ class Dataset(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+    project_id = Column(BigInteger, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    project = relationship("Project", back_populates="datasets")
 class RunStatus(str, enum.Enum):
     queued = "queued"
     running = "running"
@@ -109,3 +111,13 @@ class UserNotebook(Base):
 
     dataset = relationship("Dataset")
     user = relationship("User")
+class Project(Base):
+    __tablename__ = "projects"
+    id = Column(BigInteger, primary_key=True)
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text)
+    owner_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    owner = relationship("User")
+    datasets = relationship("Dataset", back_populates="project")

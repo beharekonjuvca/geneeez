@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+// pages/datasets.js
+import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import {
   Table,
@@ -12,16 +13,20 @@ import {
   Empty,
   Skeleton,
   Tag,
+  Select,
+  InputNumber,
 } from "antd";
 import {
   PlusOutlined,
   DeleteOutlined,
   SearchOutlined,
+  ProjectOutlined,
 } from "@ant-design/icons";
 import AppShell from "../components/AppShell";
 import { useAuth } from "../context/AuthContext";
 import DatasetUpload from "../components/DatasetUpload";
 import { listDatasets, deleteDataset } from "../lib/api/datasets";
+import { listProjects } from "../lib/api/projects"; // <-- new
 
 const { Title, Text } = Typography;
 
@@ -42,7 +47,16 @@ export default function Datasets() {
   const router = useRouter();
 
   const [rows, setRows] = useState(null);
+  const [loading, setLoading] = useState(false);
+
   const [q, setQ] = useState("");
+  const [orderBy, setOrderBy] = useState("created_at");
+  const [direction, setDirection] = useState("desc");
+  const [minRows, setMinRows] = useState(null);
+
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState(null);
+
   const [uploadOpen, setUploadOpen] = useState(false);
 
   useEffect(() => {
@@ -53,29 +67,54 @@ export default function Datasets() {
     if (initializing || !user) return;
     (async () => {
       try {
-        setRows(await listDatasets());
+        const data = await listProjects({
+          order_by: "name",
+          direction: "asc",
+          include_counts: false,
+          limit: 500,
+        });
+        setProjects(data);
       } catch {
-        message.error("Failed to load datasets");
-        setRows([]);
+        // non-fatal
       }
     })();
   }, [initializing, user]);
 
-  const filtered = useMemo(() => {
-    if (!rows) return [];
-    const needle = q.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter(
-      (r) =>
-        r.title.toLowerCase().includes(needle) ||
-        (r.description || "").toLowerCase().includes(needle) ||
-        (r.original_filename || "").toLowerCase().includes(needle)
-    );
-  }, [rows, q]);
+  async function fetchDatasets() {
+    if (initializing || !user) return;
+    setLoading(true);
+    try {
+      const data = await listDatasets({
+        q,
+        order_by: orderBy,
+        direction,
+        min_rows: minRows,
+        project_id: projectId || undefined,
+        limit: 50,
+      });
+      setRows(data);
+    } catch {
+      message.error("Failed to load datasets");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchDatasets();
+  }, [q, orderBy, direction, initializing, user, minRows, projectId]);
+
+  function handleTableChange(_pagination, _filters, sorter) {
+    if (sorter.field) {
+      setOrderBy(sorter.field);
+      setDirection(sorter.order === "ascend" ? "asc" : "desc");
+    }
+  }
 
   async function remove(id) {
     const prev = rows;
-    setRows((r) => r.filter((x) => x.id !== id));
+    setRows((r) => (r || []).filter((x) => x.id !== id));
     try {
       await deleteDataset(id);
       message.success("Dataset deleted");
@@ -85,39 +124,39 @@ export default function Datasets() {
     }
   }
 
-  function openDetail(id) {
-    router.push(`/datasets/${id}`);
-  }
-
-  if (initializing || !user) {
-    return (
-      <AppShell>
-        <div style={{ display: "grid", placeItems: "center", height: "60vh" }}>
-          <Spin />
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
       <div style={{ display: "grid", gap: 16 }}>
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: 12,
             justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
           <Title level={3} style={{ margin: 0 }}>
             Datasets
           </Title>
-          <Space>
+          <Space wrap>
+            <Select
+              allowClear
+              placeholder="Project"
+              value={projectId}
+              onChange={setProjectId}
+              style={{ width: 180 }}
+              options={projects.map((p) => ({ label: p.name, value: p.id }))}
+              suffixIcon={<ProjectOutlined />}
+            />
+            <InputNumber
+              placeholder="Min rows"
+              value={minRows}
+              onChange={setMinRows}
+              style={{ width: 120 }}
+            />
             <Input
               allowClear
               prefix={<SearchOutlined />}
-              placeholder="Search title, note, or filename"
+              placeholder="Search datasets"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               style={{ width: 320 }}
@@ -138,8 +177,10 @@ export default function Datasets() {
           <Empty
             description={
               <div>
-                <div style={{ marginBottom: 8 }}>No datasets yet</div>
-                <Text type="secondary">Upload a CSV/Excel to get started.</Text>
+                <div style={{ marginBottom: 8 }}>No datasets found</div>
+                <Text type="secondary">
+                  Try clearing filters or upload a new dataset.
+                </Text>
               </div>
             }
           >
@@ -149,37 +190,33 @@ export default function Datasets() {
           </Empty>
         ) : (
           <Table
-            dataSource={filtered}
+            dataSource={rows || []}
+            loading={loading}
             rowKey="id"
             pagination={{ pageSize: 8, hideOnSinglePage: true }}
-            onRow={(record) => ({
-              onClick: () => openDetail(record.id),
-              style: { cursor: "pointer" },
-            })}
+            onChange={handleTableChange}
             columns={[
               {
                 title: "Title",
                 dataIndex: "title",
+                sorter: true,
                 render: (v, rec) => (
-                  <div style={{ display: "flex", flexDirection: "column" }}>
-                    <a
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openDetail(rec.id);
-                      }}
-                    >
+                  <div>
+                    <a onClick={() => router.push(`/datasets/${rec.id}`)}>
                       <Text strong>{v}</Text>
                     </a>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {rec.original_filename}
-                    </Text>
+                    <div>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {rec.original_filename}
+                      </Text>
+                    </div>
                   </div>
                 ),
               },
               {
                 title: "Info",
                 render: (_, r) => (
-                  <Space size="small">
+                  <Space>
                     <Tag>{fmtBytes(r.file_size_bytes)}</Tag>
                     {r.n_rows != null && r.n_cols != null ? (
                       <Tag color="processing">
@@ -190,11 +227,12 @@ export default function Datasets() {
                     )}
                   </Space>
                 ),
-                width: 160,
+                width: 180,
               },
               {
                 title: "Created",
                 dataIndex: "created_at",
+                sorter: true,
                 render: (v) => new Date(v).toLocaleString(),
                 width: 190,
               },
@@ -206,7 +244,7 @@ export default function Datasets() {
                   <Popconfirm
                     title="Delete dataset?"
                     okType="danger"
-                    onConfirm={(e) => remove(r.id)}
+                    onConfirm={() => remove(r.id)}
                   >
                     <Button
                       icon={<DeleteOutlined />}

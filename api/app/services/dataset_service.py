@@ -5,7 +5,7 @@ import re
 import uuid
 import shutil
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import pandas as pd
 from fastapi import UploadFile
@@ -181,6 +181,7 @@ def create_dataset(
     title: str,
     description: str | None,
     upload: UploadFile,
+    project_id: Optional[int] = None, 
 ) -> Dataset:
     """
     1) Save the raw upload.
@@ -199,6 +200,7 @@ def create_dataset(
         file_size_bytes=size,
         owner_id=owner.id,
         is_public=False,
+        project_id=project_id,      
     )
     db.add(ds)
     db.commit()

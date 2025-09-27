@@ -28,7 +28,7 @@ export default function Home() {
 
   // After the initial auth check, redirect if already logged in
   useEffect(() => {
-    if (!initializing && user) router.replace("/datasets");
+    router.replace(user.role === "admin" ? "/admin" : "/dashboard");
   }, [initializing, user, router]);
 
   const checks = pwChecks(password);
