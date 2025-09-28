@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
-import { Table, Input, Select, Space, Typography, message } from "antd";
+import { Table, Input, Select, Space, Typography, message, Button } from "antd";
+import { ArrowLeftOutlined } from "@ant-design/icons";
+import { useRouter } from "next/router";
 import AppShell from "../../components/AppShell";
 import RequireAdmin from "../../components/RequireAdmin";
 import {
@@ -12,6 +14,8 @@ import {
 const { Title } = Typography;
 
 export default function AdminUsers() {
+  const router = useRouter();
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -52,9 +56,17 @@ export default function AdminUsers() {
     <AppShell>
       <RequireAdmin>
         <Space direction="vertical" style={{ width: "100%" }} size="large">
-          <Title level={3} style={{ margin: 0 }}>
-            Admin · Users
-          </Title>
+          <Space
+            align="center"
+            style={{ justifyContent: "space-between", width: "100%" }}
+          >
+            <Button icon={<ArrowLeftOutlined />} onClick={() => router.back()}>
+              Back
+            </Button>
+            <Title level={3} style={{ margin: 0 }}>
+              Admin · Users
+            </Title>
+          </Space>
 
           <Space wrap>
             <Input
@@ -75,7 +87,6 @@ export default function AdminUsers() {
               style={{ width: 140 }}
             />
           </Space>
-
           <Table
             rowKey="id"
             loading={loading}
