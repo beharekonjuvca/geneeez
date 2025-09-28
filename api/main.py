@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.db import init_db
-from app.routers import auth, datasets, analysis, recipes, stats, analysis_runs, dashboard, projects, admin_users
+from app.routers import auth, datasets, analysis, recipes, stats, analysis_runs, dashboard, projects, admin_users, admin_stats
 from fastapi.staticfiles import StaticFiles
 
 app = FastAPI(title="geneeez-api")
@@ -34,7 +34,9 @@ app.include_router(dashboard.router, tags=["dashboard"])
 
 app.include_router(projects.router, tags=["projects"])
 
-app.include_router(admin_users.router, prefix="/admin/users", tags=["admin-users"])
+app.include_router(admin_users.router, tags=["admin-users"])
+
+app.include_router(admin_stats.router, tags=["admin-stats"])
 
 @app.get("/health")
 def health():

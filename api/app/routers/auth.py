@@ -6,6 +6,7 @@ from app.models import User
 from app.schemas import AuthIn
 from app.schemas import SignupIn
 from app.security import hash_pw, check_pw, sign_access, issue_refresh, validate_refresh, revoke_refresh
+from app.services.audit import log_event
 
 router = APIRouter()
 
@@ -19,6 +20,7 @@ def signup(body: SignupIn, response: Response, db: Session = Depends(get_db)):
     access = sign_access(u)
     refresh = issue_refresh(db, u)
     response.set_cookie("refresh", refresh, httponly=True, samesite="lax", max_age=60*60*24*7)
+    log_event(db, user_id=u.id, action="login", entity="user", entity_id=u.id, request= Request)
     return {"access": access, "user": {"id": u.id, "email": u.email, "role": u.role}}
 
 @router.post("/login")
@@ -29,6 +31,7 @@ def login(body: AuthIn, response: Response, db: Session = Depends(get_db)):
     access = sign_access(u)
     refresh = issue_refresh(db, u)
     response.set_cookie("refresh", refresh, httponly=True, samesite="lax", max_age=60*60*24*7)
+    log_event(db, user_id=u.id, action="login", entity="user", entity_id=u.id, request= Request)
     return {"access": access, "user": {"id": u.id, "email": u.email, "role": u.role}}
 
 @router.post("/refresh")

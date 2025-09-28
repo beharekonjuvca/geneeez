@@ -28,7 +28,8 @@ export default function Home() {
 
   // After the initial auth check, redirect if already logged in
   useEffect(() => {
-    router.replace(user.role === "admin" ? "/admin" : "/dashboard");
+    if (!initializing && user)
+      router.replace(user.role === "admin" ? "/admin" : "/dashboard");
   }, [initializing, user, router]);
 
   const checks = pwChecks(password);
@@ -52,9 +53,16 @@ export default function Home() {
         return;
       }
       if (mode === "login") await login(email, password);
-      else await signup(email, password);
+      // else await signup(email, password);
+      // message.success("Welcome to geneeez!");
+      // router.push("/datasets");
+      const u =
+        mode === "login"
+          ? await login(email, password)
+          : await signup(email, password);
       message.success("Welcome to geneeez!");
-      router.push("/datasets");
+      const role = u?.role ?? user?.role; // fallback to context
+      router.push(role === "admin" ? "/admin" : "/dashboard");
     } catch (e) {
       message.error(e?.response?.data?.detail || "Auth failed");
     } finally {

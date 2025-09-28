@@ -16,6 +16,8 @@ export default function AdminUsers() {
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [role, setRole] = useState();
+  const [orderBy, setOrderBy] = useState("created_at");
+  const [direction, setDirection] = useState("desc");
 
   async function load() {
     setLoading(true);
@@ -23,8 +25,8 @@ export default function AdminUsers() {
       const data = await adminListUsers({
         q: q || undefined,
         role: role || undefined,
-        order_by: "created_at",
-        direction: "desc",
+        order_by: orderBy,
+        direction,
         limit: 100,
       });
       setRows(data);
@@ -37,7 +39,14 @@ export default function AdminUsers() {
 
   useEffect(() => {
     load();
-  }, [q, role]);
+  }, [q, role, orderBy, direction]);
+
+  function handleTableChange(_pagination, _filters, sorter) {
+    if (sorter && sorter.field) {
+      setOrderBy(sorter.field);
+      setDirection(sorter.order === "ascend" ? "asc" : "desc");
+    }
+  }
 
   return (
     <AppShell>
@@ -72,13 +81,42 @@ export default function AdminUsers() {
             loading={loading}
             dataSource={rows}
             pagination={{ pageSize: 10 }}
+            onChange={handleTableChange}
             columns={[
-              { title: "ID", dataIndex: "id", width: 90 },
-              { title: "Email", dataIndex: "email" },
+              {
+                title: "ID",
+                dataIndex: "id",
+                width: 90,
+                sorter: true,
+                sortOrder:
+                  orderBy === "id"
+                    ? direction === "asc"
+                      ? "ascend"
+                      : "descend"
+                    : null,
+              },
+              {
+                title: "Email",
+                dataIndex: "email",
+                sorter: true,
+                sortOrder:
+                  orderBy === "email"
+                    ? direction === "asc"
+                      ? "ascend"
+                      : "descend"
+                    : null,
+              },
               { title: "Role", dataIndex: "role" },
               {
                 title: "Created",
                 dataIndex: "created_at",
+                sorter: true,
+                sortOrder:
+                  orderBy === "created_at"
+                    ? direction === "asc"
+                      ? "ascend"
+                      : "descend"
+                    : null,
                 render: (v) => new Date(v).toLocaleString(),
                 width: 200,
               },

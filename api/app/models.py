@@ -121,3 +121,16 @@ class Project(Base):
 
     owner = relationship("User")
     datasets = relationship("Dataset", back_populates="project")
+class AdminEvent(Base):
+    __tablename__ = "admin_events"
+    id = Column(BigInteger, primary_key=True)
+    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=True) 
+    action = Column(String(64), nullable=False)    
+    entity = Column(String(64), nullable=True)         
+    entity_id = Column(BigInteger, nullable=True)
+    meta = Column("metadata_a", JSON, nullable=True)            
+    ip = Column(String(64), nullable=True)
+    user_agent = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", lazy="joined")

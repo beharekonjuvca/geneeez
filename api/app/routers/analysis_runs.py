@@ -1,11 +1,12 @@
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.db import get_db
 from app.utils.deps import current_user
 from app.models import AnalysisRun, Dataset, User, RunStatus
+from app.services.audit import log_event
 
 router = APIRouter(prefix="/analysis-runs", tags=["analysis-runs"])
 
@@ -83,6 +84,8 @@ def get_run(run_id: int, db: Session = Depends(get_db), user: User = Depends(cur
         .where(AnalysisRun.id == run_id, AnalysisRun.user_id == user.id)
     )
     run = db.execute(stmt).scalar_one_or_none()
+    log_event(db, user_id=user.id, action="analysis_run_finished", entity="analysis_run", entity_id=run.id, metadata={"status": str(run.status)}, request= Request)
+
     if not run:
         raise HTTPException(404, "Run not found")
     return {

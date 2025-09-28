@@ -1,5 +1,5 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
@@ -8,6 +8,7 @@ from app.schemas import DatasetCreate, DatasetOut
 from app.utils.deps import current_user
 from app.services.dataset_service import create_dataset, list_datasets, delete_dataset
 from sqlalchemy import select
+from app.services.audit import log_event
 
 
 router = APIRouter()
@@ -101,10 +102,12 @@ async def upload_dataset(
         upload=file,
         project_id=project_id,          
     )
+    log_event(db, user_id=user.id, action="dataset_upload", entity="dataset", entity_id=ds.id, metadata={"title": ds.title}, request= Request)
     return ds
 
 @router.delete("/{dataset_id}", status_code=204)
 def remove_dataset(dataset_id: int, db: Session = Depends(get_db), user: User = Depends(current_user)):
     ok = delete_dataset(db, user, dataset_id)
+    log_event(db, user_id=user.id, action="dataset_delete", entity="dataset", entity_id=dataset_id, request= Request)
     if not ok:
         raise HTTPException(status_code=404, detail="Dataset not found")
